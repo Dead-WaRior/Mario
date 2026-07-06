@@ -192,7 +192,7 @@
     </main>
   </body>
   <script>
-    let ws;
+    let ws = null;
     const messages = document.getElementById("messages");
     const composer = document.getElementById("composer");
     const nameInput = document.getElementById("name");
@@ -240,53 +240,56 @@
     }
 
     try {
-      // Choose correct websocket proto
       const proto = window.location.protocol === "https:" ? "wss" : "ws";
-      ws = new WebSocket(`${proto}://${window.location.host}`);
+      const host = window.location.host || "localhost:3000";
+      ws = new WebSocket(`${proto}://${host}`);
     } catch (e) {
       statusEl.textContent = "Connection failed";
+      ws = null;
     }
 
-    ws.onopen = () => {
-      statusEl.textContent = "Connected";
-    };
+    if (ws) {
+      ws.onopen = () => {
+        statusEl.textContent = "Connected";
+      };
 
-    ws.onclose = () => {
-      statusEl.textContent = "Disconnected";
-    };
+      ws.onclose = () => {
+        statusEl.textContent = "Disconnected";
+      };
 
-    ws.onerror = () => {
-      statusEl.textContent = "Connection error";
-    };
+      ws.onerror = () => {
+        statusEl.textContent = "Connection error";
+      };
 
-    ws.onmessage = (event) => {
-      let payload;
+      ws.onmessage = (event) => {
+        let payload;
 
-      try {
-        payload = JSON.parse(event.data);
-      } catch (error) {
-        addSystemMessage(event.data);
-        return;
-      }
-
-      if (payload.type === "system") {
-        addSystemMessage(payload.text);
-        if (typeof payload.visitors === "number") {
-          countEl.textContent = `${payload.visitors} visitors`;
+        try {
+          payload = JSON.parse(event.data);
+        } catch (error) {
+          addSystemMessage(event.data);
+          return;
         }
-        return;
-      }
 
-      if (payload.type === "history" && Array.isArray(payload.messages)) {
-        messages.innerHTML = "";
-        payload.messages.forEach(addChatMessage);
-        return;
-      }
+        if (payload.type === "system") {
+          addSystemMessage(payload.text);
+          if (typeof payload.visitors === "number") {
+            countEl.textContent = `${payload.visitors} visitors`;
+          }
+          return;
+        }
 
-      if (payload.type === "message") {
-        addChatMessage(payload);
-      }
-    };
+        if (payload.type === "history" && Array.isArray(payload.messages)) {
+          messages.innerHTML = "";
+          payload.messages.forEach(addChatMessage);
+          return;
+        }
+
+        if (payload.type === "message") {
+          addChatMessage(payload);
+        }
+      };
+    }
 
     composer.addEventListener("submit", (event) => {
       event.preventDefault();
