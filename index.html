@@ -2,22 +2,310 @@
 <html>
   <head>
     <title>Websocket Demo</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #111217;
+        --panel: #181b23;
+        --panel-2: #202636;
+        --text: #f4f6fb;
+        --muted: #9aa3b2;
+        --accent: #46d1a7;
+        --accent-2: #7da8ff;
+        --border: rgba(255, 255, 255, 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: Inter, system-ui, sans-serif;
+        background:
+          radial-gradient(
+            circle at top,
+            rgba(70, 209, 167, 0.15),
+            transparent 28%
+          ),
+          linear-gradient(180deg, #0f1116 0%, #090a0d 100%);
+        color: var(--text);
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+      }
+
+      .shell {
+        width: min(980px, 100%);
+        background: rgba(24, 27, 35, 0.94);
+        border: 1px solid var(--border);
+        border-radius: 24px;
+        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+        overflow: hidden;
+      }
+
+      .topbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+        padding: 20px 24px;
+        border-bottom: 1px solid var(--border);
+        background: linear-gradient(
+          90deg,
+          rgba(70, 209, 167, 0.12),
+          rgba(125, 168, 255, 0.08)
+        );
+      }
+
+      .topbar h1 {
+        margin: 0;
+        font-size: clamp(1.3rem, 2vw, 1.7rem);
+      }
+
+      .status {
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+
+      .chat {
+        display: grid;
+        grid-template-rows: 1fr auto;
+        height: min(72vh, 760px);
+      }
+
+      .messages {
+        padding: 18px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .message,
+      .system {
+        max-width: 72ch;
+        padding: 12px 14px;
+        border-radius: 16px;
+        border: 1px solid var(--border);
+        background: var(--panel-2);
+      }
+
+      .message .meta {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 6px;
+        color: var(--muted);
+        font-size: 0.82rem;
+      }
+
+      .message .name {
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      .system {
+        align-self: center;
+        color: var(--muted);
+        background: rgba(255, 255, 255, 0.03);
+      }
+
+      .composer {
+        display: grid;
+        gap: 10px;
+        grid-template-columns: 180px 1fr auto;
+        padding: 16px;
+        border-top: 1px solid var(--border);
+        background: rgba(14, 16, 22, 0.65);
+      }
+
+      .composer input,
+      .composer button {
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: #11151d;
+        color: var(--text);
+        font: inherit;
+      }
+
+      .composer input {
+        padding: 14px 16px;
+      }
+
+      .composer button {
+        padding: 14px 18px;
+        background: linear-gradient(135deg, var(--accent), var(--accent-2));
+        color: #09101a;
+        font-weight: 800;
+        cursor: pointer;
+      }
+
+      .composer button:hover {
+        filter: brightness(1.05);
+      }
+
+      @media (max-width: 720px) {
+        .chat {
+          height: calc(100vh - 140px);
+        }
+
+        .composer {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
   </head>
 
   <body>
-    <h1>hello</h1>
+    <main class="shell">
+      <section class="topbar">
+        <div>
+          <h1>Mario Chat</h1>
+          <div class="status" id="status">Connecting...</div>
+        </div>
+        <div class="status" id="count">0 visitors</div>
+      </section>
+
+      <section class="chat">
+        <div class="messages" id="messages"></div>
+
+        <form class="composer" id="composer">
+          <input
+            id="name"
+            maxlength="32"
+            placeholder="Name"
+            value="Anonymous"
+          />
+          <input
+            id="text"
+            maxlength="500"
+            placeholder="Type a message"
+            autocomplete="off"
+          />
+          <button type="submit">Send</button>
+        </form>
+      </section>
+    </main>
   </body>
   <script>
     let ws;
+    const messages = document.getElementById("messages");
+    const composer = document.getElementById("composer");
+    const nameInput = document.getElementById("name");
+    const textInput = document.getElementById("text");
+    const statusEl = document.getElementById("status");
+    const countEl = document.getElementById("count");
+
+    function scrollToBottom() {
+      messages.scrollTop = messages.scrollHeight;
+    }
+
+    function addSystemMessage(text) {
+      const item = document.createElement("div");
+      item.className = "system";
+      item.textContent = text;
+      messages.appendChild(item);
+      scrollToBottom();
+    }
+
+    function addChatMessage(message) {
+      const item = document.createElement("div");
+      item.className = "message";
+
+      const meta = document.createElement("div");
+      meta.className = "meta";
+
+      const name = document.createElement("div");
+      name.className = "name";
+      name.textContent = message.name || "Anonymous";
+
+      const time = document.createElement("div");
+      time.textContent = message.time
+        ? new Date(message.time).toLocaleTimeString()
+        : "";
+
+      const body = document.createElement("div");
+      body.textContent = message.text || "";
+
+      meta.appendChild(name);
+      meta.appendChild(time);
+      item.appendChild(meta);
+      item.appendChild(body);
+      messages.appendChild(item);
+      scrollToBottom();
+    }
+
     try {
       // Choose correct websocket proto
       const proto = window.location.protocol === "https:" ? "wss" : "ws";
       ws = new WebSocket(`${proto}://${window.location.host}`);
     } catch (e) {
-      //
+      statusEl.textContent = "Connection failed";
     }
-    ws.onmessage = (event) => {
-      console.log(event.data);
+
+    ws.onopen = () => {
+      statusEl.textContent = "Connected";
     };
+
+    ws.onclose = () => {
+      statusEl.textContent = "Disconnected";
+    };
+
+    ws.onerror = () => {
+      statusEl.textContent = "Connection error";
+    };
+
+    ws.onmessage = (event) => {
+      let payload;
+
+      try {
+        payload = JSON.parse(event.data);
+      } catch (error) {
+        addSystemMessage(event.data);
+        return;
+      }
+
+      if (payload.type === "system") {
+        addSystemMessage(payload.text);
+        if (typeof payload.visitors === "number") {
+          countEl.textContent = `${payload.visitors} visitors`;
+        }
+        return;
+      }
+
+      if (payload.type === "history" && Array.isArray(payload.messages)) {
+        messages.innerHTML = "";
+        payload.messages.forEach(addChatMessage);
+        return;
+      }
+
+      if (payload.type === "message") {
+        addChatMessage(payload);
+      }
+    };
+
+    composer.addEventListener("submit", (event) => {
+      event.preventDefault();
+
+      const text = textInput.value.trim();
+      if (!text || !ws || ws.readyState !== WebSocket.OPEN) {
+        return;
+      }
+
+      ws.send(
+        JSON.stringify({
+          type: "message",
+          name: nameInput.value.trim() || "Anonymous",
+          text,
+        }),
+      );
+
+      textInput.value = "";
+      textInput.focus();
+    });
   </script>
 </html>
